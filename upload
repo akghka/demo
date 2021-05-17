@@ -1,0 +1,111 @@
+package main
+
+import (
+	"fmt"
+	"github.com/anacrolix/dht/v2"
+	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/bencode"
+	"github.com/anacrolix/torrent/metainfo"
+	"log"
+	"net"
+	"net/http"
+	"time"
+)
+
+
+
+func newClient() (*torrent.Client, error) {
+	clientConfig := torrent.NewDefaultClientConfig()
+	clientConfig.DisableTrackers = true
+	clientConfig.DisableTCP = false
+	clientConfig.DisablePEX = true
+	clientConfig.DisableUTP = true
+	clientConfig.DisableIPv4 = false
+	clientConfig.DisableIPv6 = true
+	clientConfig.DisableAcceptRateLimiting = true
+	clientConfig.NoDHT = false
+
+	ua, err := net.ResolveUDPAddr("udp", net.JoinHostPort("127.0.0.1", "6081"))
+	if err != nil {
+		fmt.Println("error resolving ", err)
+		panic(err)
+	}
+
+	clientConfig.DhtStartingNodes = func(network string) dht.StartingNodesGetter {
+		return func() ([]dht.Addr, error) { return []dht.Addr{dht.NewAddr(ua)}, nil }
+	}
+	clientConfig.Debug = true
+	clientConfig.Seed = true
+	//clientConfig.PublicIp4 = flags.PublicIP
+	//clientConfig.PublicIp6 = flags.PublicIP
+	//clientConfig.DisablePEX = true
+	clientConfig.DisableWebtorrent = true
+	clientConfig.DisableWebseeds = true
+	client, err := torrent.NewClient(clientConfig)
+
+	clientConfig.DataDir = "/Users/rain/Movies"
+	return client, err
+}
+
+
+func main()  {
+	filePath := "/Users/rain/Movies/film"
+	log.SetFlags(log.Flags() | log.Lshortfile)
+
+	cl, err := newClient()
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+
+	mi := metainfo.MetaInfo{
+	}
+	info := metainfo.Info{
+		PieceLength: 256 * 1024,
+	}
+	err = info.BuildFromFilePath(filePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	mi.InfoBytes, err = bencode.Marshal(info)
+	if err != nil {
+		log.Fatal(err)
+	}
+	m := mi.Magnet(nil, &info)
+	m.DisplayName = "dianying"
+	log.Println("info id:", m.String())
+
+	t, err := cl.AddTorrent(&mi)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	
+	t.DownloadAll()
+
+	log.Println("seed:", t.Seeding())
+
+
+	http.HandleFunc("/torrent", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("info id:", m.String())
+		cl.WriteStatus(w)
+	})
+	http.HandleFunc("/dht", func(w http.ResponseWriter, r *http.Request) {
+		for _, ds := range cl.DhtServers() {
+			ds.WriteStatus(w)
+		}
+	})
+	go func() {
+		http.ListenAndServe(":8090", nil)
+		select {
+
+		}
+	}()
+
+	d := time.Duration(time.Second*2)
+	tt := time.NewTicker(d)
+
+	for  {
+		<- tt.C
+		log.Println(t.Seeding(), t.BytesCompleted())
+	}
+}
