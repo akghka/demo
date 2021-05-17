@@ -43,7 +43,7 @@ func newClient() (*torrent.Client, error) {
 	clientConfig.DisableWebseeds = true
 	client, err := torrent.NewClient(clientConfig)
 
-	clientConfig.DataDir = "/Users/rain/Movies"
+	clientConfig.DataDir = "/Users/rain/Movies/film"
 	return client, err
 }
 
